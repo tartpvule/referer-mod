@@ -18,42 +18,95 @@
 "use strict";
 /* from engine.js and the content script environment: */
 /* global RefererModEngine, exportFunction */
+/* from tartpvule's out-of-tree hacks */
+/* global OOT_Bug1424176_get, OOT_Bug1424176_set, OOT_Bug1424176_has,
+    OOT_Bug1424176_delete */
+
+var _toString = _toString || Object.prototype.toString;
+var _call = _call || Function.prototype.call;
+
+var referrerCache = referrerCache || new WeakMap();
 
 // [NUANCE]
-//  It is undefined whether static content scripts will run before
-//  or after dynamic content scripts. If the dynamic script ran first,
-//  engineConfig is prefilled here, otherwise engineInstance.setConfig()
-//  will be called later.
-var engineConfig;
-var engineInstance = new RefererModEngine(engineConfig);
+//  It is undefined whether static content scripts will run before or after
+//  dynamic content scripts. If the dynamic script ran first, these are
+//  already initialized.
+var INIT_DATA;
+var engine;
+//  If our OOT code has been run, this will be present already.
+var OOT_nonce;
 
-(function()
+function helperExportGetter(dummy, name, target)
 {
+	let getter = Reflect.getOwnPropertyDescriptor(dummy, name).get;
+	let exported = exportFunction(getter, target);
+	Reflect.defineProperty(target, name, {
+		configurable: true,
+		enumerable: true,
+		get: exported
+	});
+}
 
+// Workaround for Bug 1424176
+//  "document_start" hook on child frames should fire before control is
+//  returned to the parent frame"
+// !! Relies on tartpvule's out-of-tree hacks :)
+function do_OOT_Bug1424176()
+{
+	if (typeof OOT_Bug1424176_get !== "function" ||
+		typeof OOT_Bug1424176_set !== "function" ||
+		typeof OOT_Bug1424176_has !== "function" ||
+		typeof OOT_Bug1424176_delete !== "function")
+	{
+		return false;
+	}
+
+	let currentCode = OOT_Bug1424176_get();
+	if (typeof currentCode === "string" &&
+		currentCode.startsWith(`var OOT_nonce = (${INIT_DATA.nonce});`))
+	{
+		return false;
+	}
+
+	let code = `var OOT_nonce = (${INIT_DATA.nonce});
+		var RefererModEngine = (${RefererModEngine.toString()});
+		var engine = new RefererModEngine(
+			JSON.parse('${JSON.stringify(INIT_DATA.config)}'));
+		var referrerCache = new WeakMap();
+		var _toString = Object.prototype.toString;
+		var _call = Function.prototype.call;
+		${helperExportGetter.toString()}
+		${installHooks_main.toString()}
+		installHooks_main(window.wrappedJSObject);
+	`;
+	OOT_Bug1424176_set(code);
+	return true;
+}
+
+function installHooks_main(unsafeWindow)
+{
+	// [NUANCE]
+	//  The function name is exposed on .name and .toString()
+	//  on the exported function, so we need to use "dummy" objects.
+
+	// Document#referrer
 	const originalGetter = Reflect.getOwnPropertyDescriptor(
-		Document.wrappedJSObject.prototype, "referrer").get;
-
-	const documentMap = new WeakMap();
-
-	const _toString = Object.prototype.toString;
-	const _call = Function.prototype.call;
-
-	const dummy = {
+		unsafeWindow.Document.prototype, "referrer").get;
+	const dummy_document = {
 		get referrer()
 		{
-			// `this` is an XPCNativeWrapper instance
+			// `this` is X-ray wrapped
 
 			// In case someone calls us on some random things
 			if (_toString.call(this) !== "[object HTMLDocument]" ||
 				_toString.call(Reflect.getPrototypeOf(this))
-				!== "[object HTMLDocument]"
-			)
+					!== "[object HTMLDocument]")
 			{
 				return _call.call(originalGetter, this);
 			}
 
-			// In case someone calls us on another Document instance
-			let computedReferrer = documentMap.get(this.wrappedJSObject);
+			// Cache to speed up in case of other Document instances
+			let computedReferrer = referrerCache.get(this.wrappedJSObject);
 			if (typeof computedReferrer !== "undefined")
 			{
 				return computedReferrer;
@@ -61,22 +114,33 @@ var engineInstance = new RefererModEngine(engineConfig);
 
 			let url = this.URL;
 			let originUrl = String(_call.call(originalGetter, this));
-			computedReferrer = engineInstance.computeReferrer(url, originUrl);
-			documentMap.set(this.wrappedJSObject, computedReferrer);
+			computedReferrer = engine.computeReferrer(url, originUrl);
+			referrerCache.set(this.wrappedJSObject, computedReferrer);
 
 			return computedReferrer;
 		}
 	};
+	helperExportGetter(
+		dummy_document, "referrer", unsafeWindow.Document.prototype);
+}
 
-	// [NUANCE]
-	// The function name is exposed on .name and .toString() on the
-	// exported function object.
-	let hook = Reflect.getOwnPropertyDescriptor(dummy, "referrer").get;
-	let exported = exportFunction(hook, document);
-	Reflect.defineProperty(Document.wrappedJSObject.prototype, "referrer", {
-		configurable: true,
-		enumerable: true,
-		get: exported
-	});
-
-})();
+function initialize()
+{
+	if (typeof engine === "undefined")
+	{
+		engine = new RefererModEngine(INIT_DATA.config);
+	}
+	else
+	{
+		engine.setConfig(INIT_DATA.config);
+	}
+	do_OOT_Bug1424176();
+	if (typeof OOT_nonce === "undefined")
+	{
+		installHooks_main(window.wrappedJSObject);
+	}
+}
+if (typeof INIT_DATA !== "undefined")
+{
+	initialize();
+}

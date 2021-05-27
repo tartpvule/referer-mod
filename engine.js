@@ -18,7 +18,7 @@
 "use strict";
 /* exported RefererModEngine */
 
-class RefererModEngine
+var RefererModEngine = RefererModEngine || class RefererModEngine
 {
 	constructor(config)
 	{
@@ -173,4 +173,4 @@ class RefererModEngine
 		}
 		return domains;
 	}
-}
+};

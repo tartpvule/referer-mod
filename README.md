@@ -1,3 +1,12 @@
+# FORK NOTE
+
+This fork is a user of my (tartpvule) proof-of-concept [Bug1424176_poc_esr78.patch](https://github.com/tartpvule/my-firefox-patches).
+Meant to be a workaround for [Bug 1424176](https://bugzilla.mozilla.org/show_bug.cgi?id=1424176): "document_start" hook on child frames should fire before control is returned to the parent frame`.
+
+See [issue 17](https://github.com/airtower-luna/referer-mod/issues/17#issuecomment-843507333).
+
+Proof-of-concept. Hacky. Comments appreciated.
+
 # referer-mod
 
 Referer Modifier is a Web Extension for Firefox to modify the Referer header in HTTP requests, and the Javascript `document.referrer` property to match. For each target domain, one of five actions can be configured:

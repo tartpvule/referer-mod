@@ -33,6 +33,8 @@ var config = {
 	anyConf: { action: "prune", referer: "" }
 };
 
+var configNonce = 0;
+
 /*
  * Return a header entry as required for webRequest.HttpHeaders. The
  * name is always "Referer", the value the given string.
@@ -129,13 +131,18 @@ async function refreshConfig(change, area)
  */
 async function registerContentScript(config)
 {
+	let INIT_DATA = {
+		nonce: configNonce,
+		config: config
+	};
 	let code = `
-		var engineConfig = JSON.parse('${JSON.stringify(config)}');
-		if (typeof engineInstance === 'object') {
-			engineInstance.setConfig(engineConfig);
+		var INIT_DATA = JSON.parse('${JSON.stringify(INIT_DATA)}');
+		if (typeof initialize === 'function') {
+			initialize();
 		}
 	`;
 
+	configNonce++;
 	let oldRegisteredContentScript = registeredContentScript;
 	registeredContentScript = null;
 
